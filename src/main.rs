@@ -16,7 +16,7 @@ struct User {
     user_id: i32,
     nome: String,
     cpf: String,
-    telefone: Option<String>,
+    telefone: String,
     email: String,
     idade: i32,
     user_type: String,
@@ -103,7 +103,7 @@ tokio::spawn(connection);
         .and(warp::body::json())
         .and(db.clone())
         .and_then(|user: User, client: Arc<Client>| async move {
-            let insert_query = format!("INSERT INTO users (user_id, nome, cpf, telefone, email, idade, user_type)");
+            let insert_query = format!("INSERT INTO users (user_id, nome, cpf, telefone, email, idade, user_type) VALUES ('{}','{}','{}','{}','{}','{}','{}')", user.user_id, user.nome, user.cpf, user.telefone, user.email, user.idade, user.user_type);
             match client.execute(&insert_query, &[]).await {
                 Ok(rows) if rows == 1 => {
                     Ok(warp::reply::json(&user))
@@ -115,6 +115,8 @@ tokio::spawn(connection);
         }
 
         
+
+
     });
 
     
