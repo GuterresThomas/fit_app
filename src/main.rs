@@ -10,6 +10,7 @@ struct CustomError(String);
 
 impl warp::reject::Reject for CustomError {}
 
+
 // Define estruturas de dados para usuário, aluno e personal trainer
 #[derive(serde::Deserialize, serde::Serialize)]
 struct User {
@@ -193,10 +194,75 @@ tokio::spawn(connection);
         }
     });
 
+    
+
+    let get_all_alunos = warp::path!("alunos")
+    .and(warp::get())
+    .and(db.clone())
+    .and_then(|client: Arc<Client>| async move {
+        // Consulta SQL para buscar todos os alunos
+        let query = "SELECT * FROM alunos";
+
+        match client.query(query, &[]).await {
+            Ok(rows) => {
+                let mut alunos = Vec::new();
+
+                for row in rows {
+                    let aluno = Aluno {
+                        aluno_id: row.get(0),
+                        personal_id: row.get(1),
+                        nome: row.get(2),
+                        email: row.get(3),
+                        telefone: row.get(4),
+                        cpf: row.get(5),
+                    };
+                    alunos.push(aluno);
+                }
+
+                Ok(warp::reply::json(&alunos))
+            }
+            Err(err) => {
+                let error_message = format!("Erro na consulta de alunos: {}", err);
+                Err(custom(CustomError(error_message)))
+            }
+        }
+    });
+
+    let get_alunos_de_personal = warp::path!("alunos" / "personal" / i32)
+    .and(warp::get())
+    .and(db.clone())
+    .and_then(|personal_id: i32, client: Arc<Client>| async move {
+        // Consulta SQL para buscar todos os alunos associados a um personal
+        let query = "SELECT * FROM alunos WHERE personal_id = $1";
+
+        match client.query(query, &[&personal_id]).await {
+            Ok(rows) => {
+                let mut alunos = Vec::new();
+
+                for row in rows {
+                    let aluno = Aluno {
+                        aluno_id: row.get(0),
+                        personal_id: row.get(1),
+                        nome: row.get(2),
+                        email: row.get(3),
+                        telefone: row.get(4),
+                        cpf: row.get(5),
+                    };
+                    alunos.push(aluno);
+                }
+
+                Ok(warp::reply::json(&alunos))
+            }
+            Err(err) => {
+                let error_message = format!("Erro na consulta de alunos do personal trainer: {}", err);
+                Err(custom(CustomError(error_message)))
+            }
+        }
+    });
 
 
 
-    let routes = login.or(create_user).or(create_treino).or(create_aluno).with(cors);
+    let routes = login.or(create_user).or(create_treino).or(create_aluno).or(get_all_alunos).or(get_alunos_de_personal).with(cors);
 
     warp::serve(routes)
         .run(([127, 0, 0, 1], 3030))
