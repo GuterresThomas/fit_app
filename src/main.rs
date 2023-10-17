@@ -113,16 +113,28 @@ tokio::spawn(connection);
                 Err(custom(CustomError(error_message)))
             },
         }
-
         
-
-
     });
 
+    let create_treino = warp::post()
+        .and(warp::path("treino_create"))
+        .and(warp::body::json())
+        .and(db.clone())
+        .and_then(|treino: Treino, client: Arc<Client>| async move {
+            let insert_query = format!("INSERT INTO treinos (treino_id, user_id, data_do_treino, descricao_do_treino) VALUES ('{}','{}','{}')", treino.treino_id, treino.data_do_treino, treino.descricao_do_treino);
+            match client.execute(&insert_query, &[]).await {
+                Ok(rows) if rows == 1 => {
+                    Ok(warp::reply::json(&treino))
+                }
+            _ => {
+                let error_message = "Falha ao adicionar treino".to_string();
+                Err(custom(CustomError(error_message)))
+            },
+        }
+    });    
     
 
-
-    let routes = login.or(create_user).with(cors);
+    let routes = login.or(create_user).or(create_treino).with(cors);
 
     warp::serve(routes)
         .run(([127, 0, 0, 1], 3030))
