@@ -20,6 +20,7 @@ struct User {
     email: String,
     idade: i32,
     user_type: String,
+    senha: String,
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -32,6 +33,7 @@ struct Student {
 #[derive(serde::Deserialize, serde::Serialize)]
 struct Treino {
     treino_id: i32,
+    user_id: i32,
     data_do_treino: String,
     descricao_do_treino: String,
 }
@@ -103,7 +105,7 @@ tokio::spawn(connection);
         .and(warp::body::json())
         .and(db.clone())
         .and_then(|user: User, client: Arc<Client>| async move {
-            let insert_query = format!("INSERT INTO users (user_id, nome, cpf, telefone, email, idade, user_type) VALUES ('{}','{}','{}','{}','{}','{}','{}')", user.user_id, user.nome, user.cpf, user.telefone, user.email, user.idade, user.user_type);
+            let insert_query = format!("INSERT INTO users (user_id, nome, cpf, telefone, email, idade, user_type) VALUES ('{}','{}','{}','{}','{}','{}','{}', '{}')", user.user_id, user.nome, user.cpf, user.telefone, user.email, user.idade, user.user_type, user.senha);
             match client.execute(&insert_query, &[]).await {
                 Ok(rows) if rows == 1 => {
                     Ok(warp::reply::json(&user))
@@ -117,21 +119,44 @@ tokio::spawn(connection);
     });
 
     let create_treino = warp::post()
-        .and(warp::path("treino_create"))
-        .and(warp::body::json())
-        .and(db.clone())
-        .and_then(|treino: Treino, client: Arc<Client>| async move {
-            let insert_query = format!("INSERT INTO treinos (treino_id, user_id, data_do_treino, descricao_do_treino) VALUES ('{}','{}','{}')", treino.treino_id, treino.data_do_treino, treino.descricao_do_treino);
-            match client.execute(&insert_query, &[]).await {
-                Ok(rows) if rows == 1 => {
-                    Ok(warp::reply::json(&treino))
+    .and(warp::path("treino_create"))
+    .and(warp::body::json())
+    .and(db.clone())
+    .and_then(|treino: Treino, client: Arc<Client>| async move {
+        // Verifique se o usuário com o ID especificado existe
+        let user_id = treino.user_id;
+        let user_query = "SELECT user_id FROM users WHERE user_id = $1";
+
+        match client.query(user_query, &[&user_id]).await {
+            Ok(user_rows) => {
+                if user_rows.is_empty() {
+                    // O usuário com o ID especificado não foi encontrado
+                    let error_message = "Usuário não encontrado".to_string();
+                    return Err(custom(CustomError(error_message)));
                 }
-            _ => {
-                let error_message = "Falha ao adicionar treino".to_string();
+
+                // O usuário existe, então insira o treino associado
+                let insert_query = format!("INSERT INTO treinos (treino_id, user_id, data_do_treino, descricao_do_treino) VALUES ('{}','{}','{}','{}')", treino.treino_id, treino.user_id, treino.data_do_treino, treino.descricao_do_treino);
+                match client.execute(&insert_query, &[]).await {
+                    Ok(rows) if rows == 1 => {
+                        Ok(warp::reply::json(&treino))
+                    }
+                    _ => {
+                        let error_message = "Falha ao adicionar treino".to_string();
+                        Err(custom(CustomError(error_message)))
+                    }
+                }
+            }
+            Err(err) => {
+                let error_message = format!("Erro durante a verificação do usuário: {}", err);
                 Err(custom(CustomError(error_message)))
-            },
+            }
         }
-    });    
+    });
+
+    
+
+
     
 
     let routes = login.or(create_user).or(create_treino).with(cors);
