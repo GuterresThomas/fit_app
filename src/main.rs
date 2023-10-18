@@ -25,6 +25,16 @@ struct User {
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
+struct Personal {
+    personal_id: i32,
+    nome: String,
+    cpf: String,
+    telefone: String,
+    email: String,
+    idade: i32,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
 struct Aluno {
     aluno_id: i32,
     personal_id: i32, // Referência ao personal
@@ -53,6 +63,16 @@ struct LoginResponse {
     user_id: i32,
     nome: String,
     // Outras informações do usuário que você deseja retornar após o login
+}
+#[derive(serde::Deserialize, serde::Serialize)]
+struct AlunoPersonal {
+    aluno_id: i32,
+    personal_id: i32,
+    nome_aluno: String,
+    email_aluno: String,
+    telefone_aluno: String,
+    cpf_aluno: String,
+    nome_personal: String,
 }
 
 
@@ -232,8 +252,8 @@ tokio::spawn(connection);
     .and(warp::get())
     .and(db.clone())
     .and_then(|personal_id: i32, client: Arc<Client>| async move {
-        // Consulta SQL para buscar todos os alunos associados a um personal
-        let query = "SELECT * FROM alunos WHERE personal_id = $1";
+        // Consulta SQL para buscar todos os alunos associados a um personal e o nome do personal
+        let query = "SELECT alunos.*, users.nome AS nome_personal FROM alunos JOIN users ON alunos.personal_id = users.user_id WHERE alunos.personal_id = $1";
 
         match client.query(query, &[&personal_id]).await {
             Ok(rows) => {
@@ -248,7 +268,19 @@ tokio::spawn(connection);
                         telefone: row.get(4),
                         cpf: row.get(5),
                     };
-                    alunos.push(aluno);
+                    let nome_personal: String = row.get(6);
+
+                    let aluno_com_nome_personal = AlunoPersonal {
+                        aluno_id: aluno.aluno_id,
+                        personal_id: aluno.personal_id,
+                        nome_aluno: aluno.nome,
+                        email_aluno: aluno.email,
+                        telefone_aluno: aluno.telefone,
+                        cpf_aluno: aluno.cpf,
+                        nome_personal,
+                    };
+
+                    alunos.push(aluno_com_nome_personal);
                 }
 
                 Ok(warp::reply::json(&alunos))
@@ -261,9 +293,38 @@ tokio::spawn(connection);
     });
 
 
+    let get_personais = warp::get()
+    .and(warp::path!("todos_personais"))
+    .and(db.clone())
+    .and_then(|client: Arc<Client>| async move {
+        let query = format!("SELECT user_id, nome, cpf, telefone, email, idade FROM users");
 
-    let routes = login.or(create_user).or(create_treino).or(create_aluno).or(get_all_alunos).or(get_alunos_de_personal).with(cors);
+        match client.query(&query, &[]).await {              
+               
+                Ok(rows) => {
+                    let personais: Vec<Personal> = rows 
+                    .into_iter()
+                    .map(|row| Personal {
+                        personal_id: row.get("user_id"),
+                        nome: row.get("nome"),
+                        cpf: row.get("cpf"),
+                        telefone: row.get("telefone"),
+                        email: row.get("email"),
+                        idade: row.get("idade"),
+                    })
+                    .collect();
+                
+                Ok(warp::reply::json(&personais))
+                }
+                Err(err) => {
+                    let error_message = format!("Erro na consulta de personal trainer: {}", err);
+                    Err(custom(CustomError(error_message)))
+                }
+            }
+    });
+    
 
+    let routes = login.or(create_user).or(create_treino).or(create_aluno).or(get_all_alunos).or(get_alunos_de_personal).or(get_personais).with(cors);
     warp::serve(routes)
         .run(([127, 0, 0, 1], 3030))
         .await;
