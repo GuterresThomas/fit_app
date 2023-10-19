@@ -322,9 +322,61 @@ tokio::spawn(connection);
                 }
             }
     });
-    
 
-    let routes = login.or(create_user).or(create_treino).or(create_aluno).or(get_all_alunos).or(get_alunos_de_personal).or(get_personais).with(cors);
+    let get_alunos_treinos = warp::path!("alunos"/ "treinos"/ i32)
+    .and(warp::get())
+    .and(db.clone())
+    .and_then(|aluno_id: i32, client: Arc<Client>| async move {
+        let query = format!("SELECT
+        alunos.aluno_id,
+        alunos.personal_id,
+        alunos.nome AS nome_aluno,
+        alunos.email AS email_aluno,
+        alunos.telefone AS telefone_aluno,
+        alunos.cpf AS cpf_aluno,
+        treinos.treino_id,
+        treinos.data_do_treino,
+        treinos.descricao_do_treino,
+        users.nome AS nome_personal
+    FROM
+        alunos
+    JOIN
+        users ON alunos.personal_id = users.user_id
+    JOIN
+        treinos ON alunos.aluno_id = treinos.aluno_id
+    WHERE
+     alunos.aluno_id = $1;");
+     match client.query(&query, &[&aluno_id]).await {
+        Ok(rows) => {
+            let mut result = Vec::new();
+            for row in rows {
+                let aluno = AlunoPersonal {
+                    aluno_id: row.get("aluno_id"),
+                    personal_id: row.get("personal_id"),
+                    nome_aluno: row.get("nome_aluno"),
+                    email_aluno: row.get("email_aluno"),
+                    telefone_aluno: row.get("telefone_aluno"),
+                    cpf_aluno: row.get("cpf_aluno"),
+                    nome_personal: row.get("nome_personal"),
+                };
+                let treino = Treino {
+                    treino_id: row.get("treino_id"),
+                    aluno_id: row.get("aluno_id"),
+                    data_do_treino: row.get("data_do_treino"),
+                    descricao_do_treino: row.get("descricao_do_treino"),
+                };
+                result.push((aluno, treino));
+            }
+            Ok(warp::reply::json(&result))
+        }
+        Err(err) => {
+            let error_message = format!("Erro na consulta de alunos e treinos: {}", err);
+            Err(custom(CustomError(error_message)))
+        }
+    }
+    });
+
+    let routes = login.or(create_user).or(create_treino).or(create_aluno).or(get_all_alunos).or(get_alunos_de_personal).or(get_personais).or(get_alunos_treinos).with(cors);
     warp::serve(routes)
         .run(([127, 0, 0, 1], 3030))
         .await;
