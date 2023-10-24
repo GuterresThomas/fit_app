@@ -376,7 +376,15 @@ tokio::spawn(connection);
     }
     });
 
-    let routes = login.or(create_user).or(create_treino).or(create_aluno).or(get_all_alunos).or(get_alunos_de_personal).or(get_personais).or(get_alunos_treinos).with(cors);
+    let routes = login.
+    or(create_user).
+    or(create_treino).
+    or(create_aluno).
+    or(get_all_alunos).
+    or(get_alunos_de_personal).
+    or(get_personais).
+    or(get_alunos_treinos)
+    .with(cors);
     warp::serve(routes)
         .run(([127, 0, 0, 1], 3030))
         .await;
