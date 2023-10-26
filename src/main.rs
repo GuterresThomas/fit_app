@@ -3,6 +3,9 @@ use tokio_postgres::{NoTls, Error, Client};
 use std::sync::Arc;
 use warp::reject::custom;
 use serde::{Deserialize, Serialize};
+use tracing::{trace, debug, info, warn, error};
+
+
 
 // Define um tipo de erro personalizado que implementa Reject
 #[derive(Debug)]
@@ -34,7 +37,7 @@ struct Personal {
     idade: i32,
 }
 
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(serde::Deserialize, serde::Serialize, Debug)]
 struct Aluno {
     aluno_id: i32,
     personal_id: i32, // Referência ao personal
@@ -75,9 +78,26 @@ struct AlunoPersonal {
     nome_personal: String,
 }
 
+use tracing::Subscriber;
+use tracing_subscriber::FmtSubscriber;
+
+fn setup_tracing() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Configura o subscriber para formatar e imprimir logs no console.
+    let subscriber = FmtSubscriber::builder()
+        .with_max_level(tracing::Level::TRACE) // Configure o nível de log conforme necessário.
+        .finish();
+    
+    // Registra o subscriber globalmente.
+    tracing::subscriber::set_global_default(subscriber)?;
+
+    Ok(())
+}
+
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
+    setup_tracing().expect("Erro ao configurar o rastreamento de logs");
+
     let (client, connection) =
     tokio_postgres::connect("host=localhost user=postgres password=1234 dbname=postgres", NoTls)
         .await?;
@@ -87,10 +107,10 @@ tokio::spawn(connection);
     let db = warp::any().map(move || client.clone());
 
     let cors = warp::cors()
-        .allow_any_origin()
-        .allow_methods(vec!["GET", "POST", "DELETE", "PUT"])
-        .allow_headers(vec!["Content-Type"])
-        .max_age(3600);
+    .allow_any_origin()
+    .allow_methods(vec!["GET", "POST", "DELETE", "PUT"])
+    .allow_headers(vec!["User-Agent", "Sec-Fetch-Mode", "Referer", "Origin", "Access-Control-Request-Method", "Access-Control-Request-Headers"])
+    .max_age(3600);
 
         let login = warp::post()
         .and(warp::path("login"))
@@ -183,6 +203,7 @@ tokio::spawn(connection);
     .and(warp::body::json())
     .and(db.clone())
     .and_then(|aluno: Aluno, client: Arc<Client>| async move {
+        trace!("Recebida solicitação para criar aluno: {:?}", aluno);
         // Verifique se o usuário com o ID especificado existe
         let user_id = aluno.personal_id;
         let user_query = "SELECT user_id FROM users WHERE user_id = $1";
@@ -197,8 +218,13 @@ tokio::spawn(connection);
 
                 // O personal trainer existe, então insira o aluno associado
                 let insert_query = format!("INSERT INTO alunos (aluno_id, personal_id, nome, email, telefone, cpf) VALUES ('{}','{}','{}','{}','{}','{}')", aluno.aluno_id, aluno.personal_id, aluno.nome, aluno.email, aluno.telefone, aluno.cpf);
+                
+                debug!("Tentativa de inserir aluno no banco de dados: {:?}", insert_query);
+
+
                 match client.execute(&insert_query, &[]).await {
                     Ok(rows) if rows == 1 => {
+                        info!("Aluno criado com sucesso: {:?}", aluno);
                         Ok(warp::reply::json(&aluno))
                     }
                     _ => {
